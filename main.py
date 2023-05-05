@@ -6,6 +6,7 @@ from torchvision.datasets import MNIST # Training dataset
 from torchvision.utils import make_grid
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+from tqdm.auto import tqdm
 
 def show_tensor_images(image_tensor, num_images=25, size=(1, 28, 28)):
     '''
@@ -131,14 +132,14 @@ class Discriminator(nn.Module):
 ## Setting up the parameters
 
 criterion = nn.BCEWithLogitsLoss()
-n_epochs = 200
+n_epochs = 120
 z_dim= 64
 display_step = 500
 batch_size = 128
 lr = 0.00001
 
 dataloader = DataLoader(
-    MNIST('.',download=False,transform=transforms.ToTensor()),
+    MNIST('.',download=True,transform=transforms.ToTensor()),
     batch_size = batch_size,
     shuffle=True
 )
@@ -196,7 +197,7 @@ def get_gen_loss(gen,disc,criterion,num_images,z_dim,device):
     gen_loss - a torch scaler loss value of the generator model
     '''
 
-    noise_vectors = noise_gen(z_dim,num_images)
+    noise_vectors = noise_gen(num_images,z_dim)
     fake_images = gen(noise_vectors)
     pred_fake = disc(fake_images)
     gen_loss = criterion(pred_fake,torch.ones_like(pred_fake))
@@ -210,8 +211,39 @@ mean_discriminator_loss = 0
 test_generator = True
 gen_loss = False
 error = False
+z_dim = 64
 
 for epoch in range(n_epochs):
+
+    for real, _ in tqdm(dataloader):
+        cur_batch_size = len(real)
+
+        real = real.view(cur_batch_size,-1).to(device)
+        disc_opt.zero_grad()
+        disc_loss = get_disc_loss(gen,disc,criterion,real,cur_batch_size,z_dim,device)
+        disc_loss.backward(retain_graph = True)
+        disc_opt.step()
+
+        gen_opt.zero_grad()
+        gen_loss = get_gen_loss(gen,disc,criterion,cur_batch_size,z_dim,device)
+        gen_loss.backward(retain_graph = True)
+        gen_opt.step()
+
+        mean_discriminator_loss += disc_loss.item()/display_step
+        mean_generator_loss += gen_loss.item()/display_step
+
+        if cur_step % display_step == 0 and cur_step > 0:
+            print(
+                f"Step {cur_step}: Generator loss: {mean_generator_loss}, discriminator loss: {mean_discriminator_loss}")
+            fake_noise = noise_gen(cur_batch_size, z_dim)
+            fake = gen(fake_noise)
+            show_tensor_images(fake)
+            show_tensor_images(real)
+            mean_generator_loss = 0
+            mean_discriminator_loss = 0
+        cur_step += 1
+
+
 
 
 
